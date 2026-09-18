@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Магазин</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    margin: 0;
+    padding: 16px;
+    padding-bottom: 40px;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 16px 0;
+    font-weight: 700;
+  }
+  .label {
+    font-size: 13px;
+    opacity: .7;
+    margin-bottom: 6px;
+  }
+  select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    color: var(--tg-theme-text-color, #000);
+    border: none;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 18px;
+    padding-right: 40px;
+  }
+  .card {
+    background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .card h3 {
+    margin: 0 0 6px 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .card .desc {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    opacity: .7;
+    line-height: 1.4;
+  }
+  .price {
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+  button.buy {
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #ffffff);
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: opacity .15s;
+  }
+  button.buy:active {
+    opacity: .7;
+  }
+  .category-title {
+    font-size: 14px;
+    font-weight: 600;
+    opacity: .6;
+    margin: 20px 0 10px 0;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+</style>
+</head>
+<body>
+
+<h1>🛒 Магазин</h1>
+
+<div class="label">Выбери чат:</div>
+<select id="chatSelect"></select>
+
+<div id="products"></div>
+
+<script>
+var tg = null;
+if (window.Telegram && window.Telegram.WebApp) {
+  tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+}
+
+var CHATS = [
+  { id: -1003018474298, title: "anon chat" },
+  { id: -1002527332271, title: "анон хайфа крайот" }
+];
+
+var PRODUCTS = [
+  { id: "pin_1h", category: "design", title: "Закреп на 1 час",
+    description: "Закрепит сообщение в чате на 1 час", price: 10 },
+  { id: "pin_24h", category: "design", title: "Закреп на 24 часа",
+    description: "Закрепит сообщение на сутки", price: 50 },
+  { id: "antispam_7d", category: "moder", title: "Анти-спам на 7 дней",
+    description: "Удаляет спам и мат в чате", price: 150 },
+  { id: "broadcast_1", category: "broadcast", title: "Рассылка 1 сообщения",
+    description: "Отправит сообщение всем подписчикам", price: 100 }
+];
+
+var CATEGORIES = {
+  design: "🎨 Оформление",
+  moder: "🛡 Модерация",
+  broadcast: "📢 Рассылки"
+};
+
+var chatSelect = document.getElementById("chatSelect");
+CHATS.forEach(function(c) {
+  var opt = document.createElement("option");
+  opt.value = c.id;
+  opt.textContent = c.title;
+  chatSelect.appendChild(opt);
+});
+
+var box = document.getElementById("products");
+var grouped = {};
+PRODUCTS.forEach(function(p) {
+  if (!grouped[p.category]) grouped[p.category] = [];
+  grouped[p.category].push(p);
+});
+
+Object.keys(grouped).forEach(function(catId) {
+  var catTitle = document.createElement("div");
+  catTitle.className = "category-title";
+  catTitle.textContent = CATEGORIES[catId] || catId;
+  box.appendChild(catTitle);
+
+  grouped[catId].forEach(function(p) {
+    var card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      "<h3>" + p.title + "</h3>" +
+      "<p class='desc'>" + p.description + "</p>" +
+      "<div class='price'>" + p.price + " ⭐</div>" +
+      "<button class='buy' onclick=\"buy('" + p.id + "')\">Купить</button>";
+    box.appendChild(card);
+  });
+});
+
+function buy(productId) {
+  if (!tg) tg = window.Telegram && window.Telegram.WebApp;
+  if (!tg || !tg.sendData) {
+    alert("❌ Открой через кнопку в боте!");
+    return;
+  }
+
+  var chatId = parseInt(chatSelect.value);
+  if (!chatId) {
+    alert("❌ Выбери чат!");
+    return;
+  }
+
+  var payload = {
+    action: "buy",
+    product_id: productId,
+    chat_id: chatId
+  };
+
+  try {
+    tg.sendData(JSON.stringify(payload));
+    tg.close();
+  } catch (e) {
+    alert("❌ Ошибка: " + e.message);
+  }
+}
+</script>
+</body>
+</html>
