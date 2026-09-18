@@ -1,7 +1,9 @@
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -60,11 +62,11 @@ PRODUCTS = [
     {
         "id": "pin_1h",
         "title": "📌 Закреп на 1 час",
-        "description": "Закрепить твоё последнее сообщение в чате на 1 час",
+        "description": "Закрепить сообщение в чате на 1 час",
         "price": 10,
         "type": "pin",
         "need_user": False,
-        "only_chat": True,  # ТОЛЬКО ЧАТЫ
+        "only_chat": True,
     },
 ]
 
@@ -119,7 +121,6 @@ async def show_product(cb: CallbackQuery):
         await cb.answer("Товар не найден", show_alert=True)
         return
     
-    # Собираем чаты, где бот админ
     is_admin = cb.from_user.id == ADMIN_ID
     chats = []
     for chat_id, title in ALLOWED_CHATS.items():
@@ -128,12 +129,10 @@ async def show_product(cb: CallbackQuery):
             if bm.status not in ("administrator", "creator"):
                 continue
             
-            # Проверка типа: для only_chat — только группы
             chat = await bot.get_chat(chat_id)
             if product["only_chat"] and chat.type not in ("group", "supergroup"):
                 continue
             
-            # Проверка юзера
             if not is_admin:
                 um = await bot.get_chat_member(chat_id, cb.from_user.id)
                 if um.status not in ("administrator", "creator"):
@@ -189,7 +188,6 @@ async def buy_product(cb: CallbackQuery):
         await cb.answer("Чат недоступен", show_alert=True)
         return
     
-    # Для товаров, требующих юзера — просим ввести
     if product["need_user"]:
         user_state[cb.from_user.id]["chat_id"] = chat_id
         await cb.message.edit_text(
@@ -205,7 +203,6 @@ async def buy_product(cb: CallbackQuery):
         await cb.answer()
         return
     
-    # Не требует юзера — сразу счёт
     await send_invoice(cb.from_user.id, cb.message, product, chat_id)
 
 
@@ -214,15 +211,13 @@ async def buy_product(cb: CallbackQuery):
 async def handle_user_input(msg: Message):
     state = user_state.get(msg.from_user.id, {})
     if "chat_id" not in state or "product_id" not in state:
-        return  # не в процессе
+        return
     
     product = get_product(state["product_id"])
     if not product:
         return
     
     target = msg.text.strip()
-    
-    # Если @username — оставляем как есть, если ID — конвертим
     if not target.startswith("@") and target.isdigit():
         target = int(target)
     
@@ -294,35 +289,25 @@ async def paid(msg: Message):
     )
     
     try:
-        # --- РАЗБАН ---
         if product["type"] == "unban":
-            await bot.unban_chat_member(
-                chat_id=chat_id,
-                user_id=target_user if isinstance(target_user, int) else target_user,
-                only_if_banned=True
-            )
+            uid = target_user if isinstance(target_user, int) else target_user
+            await bot.unban_chat_member(chat_id=chat_id, user_id=uid, only_if_banned=True)
             await bot.send_message(
                 chat_id,
-                f"🔓 Разбан: <b>{target_user}</b>\n"
-                f"Купил: {msg.from_user.full_name}",
+                f"🔓 Разбан: <b>{target_user}</b>\nКупил: {msg.from_user.full_name}",
                 parse_mode="HTML"
             )
             await msg.answer("✅ Пользователь разбанен!")
         
-        # --- РАЗБАН + ССЫЛКА ---
         elif product["type"] == "unban_link":
+            uid = target_user if isinstance(target_user, int) else target_user
             try:
-                await bot.unban_chat_member(
-                    chat_id=chat_id,
-                    user_id=target_user if isinstance(target_user, int) else target_user,
-                    only_if_banned=True
-                )
+                await bot.unban_chat_member(chat_id=chat_id, user_id=uid, only_if_banned=True)
             except Exception as e:
                 print(f"⚠️ unban: {e}")
             
             link = await bot.create_chat_invite_link(
-                chat_id=chat_id,
-                member_limit=1,
+                chat_id=chat_id, member_limit=1,
                 name=f"Разбан для {target_user}"
             )
             await msg.answer(
@@ -333,16 +318,13 @@ async def paid(msg: Message):
             )
             await bot.send_message(
                 chat_id,
-                f"🔓 Разбан: <b>{target_user}</b> + ссылка\n"
-                f"Купил: {msg.from_user.full_name}",
+                f"🔓 Разбан: <b>{target_user}</b> + ссылка\nКупил: {msg.from_user.full_name}",
                 parse_mode="HTML"
             )
         
-        # --- ССЫЛКА ---
         elif product["type"] == "invite_link":
             link = await bot.create_chat_invite_link(
-                chat_id=chat_id,
-                member_limit=1,
+                chat_id=chat_id, member_limit=1,
                 name=f"Ссылка от {msg.from_user.full_name}"
             )
             await msg.answer(
@@ -353,11 +335,10 @@ async def paid(msg: Message):
                 parse_mode="HTML"
             )
         
-        # --- АНМУТ ---
         elif product["type"] == "unmute":
+            uid = target_user if isinstance(target_user, int) else target_user
             await bot.restrict_chat_member(
-                chat_id=chat_id,
-                user_id=target_user if isinstance(target_user, int) else target_user,
+                chat_id=chat_id, user_id=uid,
                 permissions=ChatPermissions(
                     can_send_messages=True,
                     can_send_media_messages=True,
@@ -367,21 +348,15 @@ async def paid(msg: Message):
             )
             await bot.send_message(
                 chat_id,
-                f"🔊 Анмут: <b>{target_user}</b>\n"
-                f"Купил: {msg.from_user.full_name}",
+                f"🔊 Анмут: <b>{target_user}</b>\nКупил: {msg.from_user.full_name}",
                 parse_mode="HTML"
             )
             await msg.answer("✅ Мут снят!")
         
-        # --- ЗАКРЕП ---
         elif product["type"] == "pin":
-            # Закрепляем последнее сообщение пользователя
-            # (в реальности нужно найти его, но Telegram API не даёт искать)
-            # Просто отправляем и закрепим сервисное
             sent = await bot.send_message(
                 chat_id,
-                f"📌 Закреп на 1 час\n"
-                f"Купил: {msg.from_user.full_name}"
+                f"📌 Закреп на 1 час\nКупил: {msg.from_user.full_name}"
             )
             await bot.pin_chat_message(
                 chat_id=chat_id,
@@ -392,7 +367,10 @@ async def paid(msg: Message):
     
     except Exception as e:
         print(f"❌ Применение: {e}")
-        await msg.answer(f"⚠️ Оплата прошла, но применить не удалось:\n<code>{e}</code>", parse_mode="HTML")
+        await msg.answer(
+            f"⚠️ Оплата прошла, но применить не удалось:\n<code>{e}</code>",
+            parse_mode="HTML"
+        )
 
 
 # ============ Мои чаты ============
@@ -441,11 +419,10 @@ async def help_cb(cb: CallbackQuery):
         "<b>Услуги:</b>\n"
         "🔓 Разбан — разблокировать юзера\n"
         "🔓 Разбан + ссылка — разбан и одноразовая ссылка\n"
-        "🔗 Ссылка — одноразовая ссылка-приглашение\n"
+        "🔗 Ссылка — одноразовая ссылка\n"
         "🔊 Анмут — снять мут\n"
-        "📌 Закреп — закрепить сообщение на 1 час\n\n"
-        "⚠️ Бот должен быть админом в чате.\n"
-        "⚠️ Разбан/анмут/закреп — только в чатах (не каналах)."
+        "📌 Закреп — закрепить на 1 час\n\n"
+        "⚠️ Бот должен быть админом в чате."
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
@@ -463,12 +440,24 @@ async def back_main(cb: CallbackQuery):
         [InlineKeyboardButton(text="📋 Мои чаты", callback_data="my_chats")],
         [InlineKeyboardButton(text="❓ Помощь", callback_data="help")],
     ])
-    await cb.message.edit_text(
-        "👋 <b>Главное меню</b>",
-        parse_mode="HTML",
-        reply_markup=kb
-    )
+    await cb.message.edit_text("👋 <b>Главное меню</b>", parse_mode="HTML", reply_markup=kb)
     await cb.answer()
+
+
+# ============ HTTP HEALTHCHECK для Render ============
+async def healthcheck(request):
+    return web.Response(text="Bot is running!")
+
+
+async def start_web():
+    app = web.Application()
+    app.router.add_get("/", healthcheck)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 HTTP healthcheck на порту {port}")
 
 
 # ============ Запуск ============
@@ -478,11 +467,7 @@ async def main():
     print(f"   ADMIN_ID: {ADMIN_ID}")
     print(f"   Чаты: {ALLOWED_CHATS}")
     
-    # Сначала HTTP — чтобы Render видел порт
     await start_web()
-    print("🌐 HTTP запущен")
-    
-    # Потом polling
     await dp.start_polling(bot)
 
 
