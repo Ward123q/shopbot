@@ -477,6 +477,12 @@ async def main():
     print("🤖 Бот запущен!")
     print(f"   ADMIN_ID: {ADMIN_ID}")
     print(f"   Чаты: {ALLOWED_CHATS}")
+    
+    # Сначала HTTP — чтобы Render видел порт
+    await start_web()
+    print("🌐 HTTP запущен")
+    
+    # Потом polling
     await dp.start_polling(bot)
 
 
